@@ -81,9 +81,21 @@ class PoolingLayer(Layer):
         super().__init__()
         self.pool_size = pool_size
         
-    def forward(self):
-        pass
-                
+    def forward(self, data):
+        data_rows, data_cols = data.shape
+        pool_data_rows = data_rows//self.pool_size
+        pool_data_cols = data_cols//self.pool_size
+        
+        max_pooling = np.zeros((pool_data_rows, pool_data_cols))
+
+        for i in range(0, data_rows - self.pool_size+1, self.pool_size):
+            for j in range(0, data_cols - self.pool_size+1, self.pool_size):
+                a = i//self.pool_size
+                b = j//self.pool_size
+                max_pooling[i, j] = np.max(data[i:i+self.pool_size, j:j+self.pool_size])
+
+        return max_pooling
+                   
     def backward(self):
         pass
 
