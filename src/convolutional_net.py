@@ -1,16 +1,42 @@
 import numpy as np
 import abc
 class Network():
-    def __init__(self):
-        self.layers = []
-        self.cost_function = 0
-        self.optimizer = 0
+    def __init__(self, layers):
+        self.layers = layers
+        self.loss_fn = self.cross_entropy_cost
     
-    def train():
-        pass
+    def forward(self, X):
+        out = X
+        for layer in self.layers:
+            out = layer.forward(out)
+        return out
     
-    def predict():
-        pass
+    def backward(self, grad):
+        for layer in reversed(self.layers):
+            grad = layer.backward(grad)
+
+    def train(self, X, y, epochs):
+        for epoch in range(epochs):
+            y_pred = self.forward(X)
+
+            loss = self.loss_fn.forward(y, y_pred)
+
+            grad = self.loss_fn.backward(y, y_pred)
+            self.backward(grad)
+
+            print(f"Epoch {epoch+1}, Loss: {loss}")
+            
+    def cross_entropy_cost(self, y_true, y_pred, derivate=False):
+        def backward(y_true, y_pred):
+            return y_pred-y_true
+
+        def forward(y_true, y_pred):
+            epsilon = 1e-15  
+            y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
+            return -np.mean(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
+        
+    def predict(self, X):
+        return self.forward(X)
 
 class Layer(abc.ABC):
     def __init__(self):
@@ -27,13 +53,13 @@ class Layer(abc.ABC):
     
 
 class ConvLayer(Layer):
-    def __init__(self, seed=42, kernel_size=1, filters=1, padding=0):
+    def __init__(self, seed=42, kernel_size=2, filters=1, padding=0):
         super().__init__()
         np.random.seed(seed)        
         
         self.kernel_size = kernel_size
         self.filters = filters
-        self.kernels = np.random.normal(loc=0, scale=1, size=(self.kernel_size, self.kernel_size, self.filters))
+        self.kernels = np.random.normal(loc=0, scale=1, size=(kernel_size, kernel_size, filters))
         self.padding = padding
         self.bias = np.zeros(filters)
 
@@ -46,33 +72,51 @@ class ConvLayer(Layer):
         
     def forward(self, X):
         self.X = X
-        H, W = self.X.shape
-        X_padded = np.zeros((H+self.padding*2,W+self.padding*2))
-        padded_rows_img, padded_cols_img = X_padded.shape
-        X_padded[self.padding:padded_rows_img-self.padding, self.padding:padded_cols_img-self.padding] = self.data
+        H, W, _ = self.X.shape
+        Kh, Kw =  self.kernel_size, self.kernel_size
         
-        data_filtered = []
-        for idx, kernel in enumerate(self.kernels):
-            kernel_rows, kernel_cols = kernel.shape
-            img_filter_rows = padded_rows_img-kernel_rows+1
-            img_filter_cols = padded_cols_img-kernel_cols+1
+        X_padded = np.pad(X, self.padding, mode='constant')
+        self.X_padded = X_padded
+        H_out= H - Kh + 1
+        W_out= W - Kw + 1
+        out = np.zeros((H_out, W_out, self.filters))
+        
+        for f in range(self.filters):
+            for i in range(0, H_out):
+                for j in range(0, W_out):
+                    window = X_padded[i:i+Kh, j:j+Kw, f]
+                    out[i,j,f] = np.sum(window*self.kernels[:,:,f]) + self.bias[f]
+        
+        self.out = out
+        return out
 
-            image_filter = np.zeros((img_filter_rows, img_filter_cols))
-            
-            for i in range(img_filter_rows):
-                for j in range(img_filter_cols):
-                    image_filter[i, j] = np.sum(padded_img[i:kernel_rows+i, j:kernel_cols+j]*kernel)+self.bias[idx]
-            
-            activated_filter = self.relu(image_filter)
-            data_filtered.append(activated_filter)
+    def backward(self, dY):
+        X_padded = self.X_padded
+        Xp_h, Xp_w = X_padded.shape
+        Kh, Kw, F = self.kernels.shape
+        H_out, W_out, _ = dY.shape
+
+        dX_padded = np.zeros_like(X_padded)
+        dW = np.zeros_like(self.kernels)
+        db = np.zeros_like(self.bias)
+
+        for f in range(F):
+            for i in range(H_out):
+                for j in range(W_out):
+                    grad_val = dY[i,j,f]
+                    window = X_padded[i:i+Kh, j:j+Kw]
+
+                    dW[:,:,f] += window*grad_val
+                    dX_padded[i:i+Kh, j:j+Kw] += self.kernels[:,:,f]*grad_val
+                    db[f] += grad_val
         
-        self.output = np.array(data_filtered)
-        self.output = np.transpose(self.output, (1, 2, 0))
+        if self.padding > 0:
+            dX = dX_padded[self.padding:-self.padding, self.padding:-self.padding]
+        else:
+            dX = dX_padded
         
-        return self.output
-        
-    def backward(self):
-        pass
+        return dX, dW, db
+
 
 class PoolingLayer(Layer):
     def __init__(self, pool_size):
@@ -83,66 +127,76 @@ class PoolingLayer(Layer):
         
     def forward(self, data):
         self.input_shape = data.shape
-        data_rows, data_cols = self.input_shape
-        pool_data_rows = data_rows//self.pool_size
-        pool_data_cols = data_cols//self.pool_size
+        data_h, data_w, data_f = self.input_shape
+        pool_data_h = data_h//self.pool_size
+        pool_data_w = data_w//self.pool_size
         
-        max_pooling = np.zeros((pool_data_rows, pool_data_cols))
+        max_pooling = np.zeros((pool_data_h, pool_data_w, data_f))
         self.mask_gradient = np.zeros_like(max_pooling, dtype=int)
-
-        for i in range(0, data_rows - self.pool_size+1, self.pool_size):
-            for j in range(0, data_cols - self.pool_size+1, self.pool_size):
-                a = i//self.pool_size
-                b = j//self.pool_size
-                window = data[i:i+self.pool_size, j:j+self.pool_size]
-                max_pooling[a, b] = np.max(window)
-                self.mask_gradient[a,b] = np.argmax(window)
+        
+        for f in range(data_f):
+            for i in range(0, data_h - self.pool_size+1, self.pool_size):
+                for j in range(0, data_w - self.pool_size+1, self.pool_size):
+                    a = i//self.pool_size
+                    b = j//self.pool_size
+                    window = data[i:i+self.pool_size, j:j+self.pool_size, f]
+                    max_pooling[a, b, f] = np.max(window)
+                    self.mask_gradient[a,b,f] = np.argmax(window)
 
         return max_pooling
-                   
-    def backward(self):
-        pass
-    
+
     def backward(self, output_gradient):
-        input_gradient = np.zeros(self.input_shape)
-        
         mask_flat = self.mask_gradient.flatten()
         output_gradient_flat = output_gradient.flatten()
-        
+        input_gradient_flat = np.zeros(self.input_shape).flatten()
+
         for i in range(len(output_gradient_flat)):
             gradient_value = output_gradient_flat[i]
             max_index_flat = mask_flat[i]
-            
-            row_index = i // (self.input_shape[1] // self.pool_size)
-            col_index = i % (self.input_shape[1] // self.pool_size)
-            
-            max_row_in_window = max_index_flat // self.pool_size
-            max_col_in_window = max_index_flat % self.pool_size
-            
-            original_row = row_index * self.pool_size + max_row_in_window
-            original_col = col_index * self.pool_size + max_col_in_window
-            input_gradient[original_row, original_col] = gradient_value
+            input_gradient_flat[max_index_flat] = gradient_value
+
+        input_gradient = input_gradient_flat.reshape(self.input_shape)
+
+        data_h, data_w, data_f = self.input_shape
+        input_gradient = np.zeros(self.input_shape)
+
+        for f in range(data_f):
+            for i in range(0, data_h-self.pool_size+1, self.pool_size):
+                for j in range(o, data_w-self.pool_size+1, self.pool_size):
+                    a = i // self.pool_size
+                    b = j // self.pool_size
+
+                    grad = output_gradient[a,b,f]
+                    max_index = self.mask_gradient[a,b,f]
+
+                    max_row = max_index // self.pool_size
+                    max_col = max_index % self.pool_size
+                    input_gradient[i+max_row, j+max_col] = grad
+
         return input_gradient
     
 class FlattenLayer(Layer):
-    def __init__(self, input_shape):
+    def __init__(self):
         super().__init__()
-        self.input_shape = input_shape
+        self.input_shape = None
         self.input = None
         
     def forward(self, data):
+        self.input_shape = data.shape
         self.input = data
+        print(self.input_shape)
         return self.input.flatten()
                 
     def backward(self, output_gradient):
         return output_gradient.reshape(self.input_shape)
 
 class DenseLayer(Layer):
-    def __init__(self, neuronas, seed=42, activation='softmax', input_shape=None):
+    def __init__(self, neurons, seed=42, activation='softmax'):
         super().__init__()
         np.random.seed(seed)
-        self.weights = np.random.randn(input_shape, neuronas)/np.sqrt(input_shape) 
-        self.biases = np.zeros((1, neuronas))
+        self.weights = None
+        self.biases = None
+        self.neurons = neurons
 
         activations = {
             'relu': self.relu, 
@@ -170,8 +224,13 @@ class DenseLayer(Layer):
         return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
     
     def forward(self, input_data):
+        input_shape = input_data.shape
+        print(input_shape)
+        self.weights = np.random.randn(input_shape[1], self.neurons)/np.sqrt(input_shape) 
+        self.biases = np.zeros((1, self.neurons))
+
         self.input = input_data
-        z = np.dot(input, self.weights)+self.biases
+        z = np.dot(self.input, self.weights)+self.biases
         self.activation_output = self.activation(z)
         return self.activation_output
                 
