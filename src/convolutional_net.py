@@ -1,5 +1,5 @@
 import numpy as np
-import abc
+import abc 
 
 class CrossEntropyLoss():
         def forward(self, y_true, y_pred):
