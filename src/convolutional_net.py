@@ -155,6 +155,7 @@ class ConvLayer(Layer):
                         self.dW[:,:,:,f] += window * grad_val
                         dX_padded[b, i:i+Kh, j:j+Kw, :] += self.kernels[:,:,:,f] * grad_val
                         self.db[f] += grad_val
+        
         self.dW /= B
         self.db /= B
         if self.padding > 0:
