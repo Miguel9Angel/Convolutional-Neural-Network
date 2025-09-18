@@ -1,4 +1,4 @@
-# 🦾🤖 Creating a Neural Network from Scratch
+# 🦾🤖 Creating a Convolutional Neural Network from Scratch
 
 ![preview](./assets/BestModelRandSearchCost_Accuracy.png)
 
