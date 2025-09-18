@@ -1,7 +1,5 @@
 # 🦾🤖 Creating a Convolutional Neural Network from Scratch
 
-![preview](./assets/BestModelRandSearchCost_Accuracy.png)
-
 Make a general convolutional neural network from scratch with some of the most important configurations. Implementing the convolutional layer, pooling layer, flatten layer and the dense layer to undertand the altgorithm. Then test it with different data sets and track it's performance with differents hyperparameters.
 
 ## 📊 Dataset
